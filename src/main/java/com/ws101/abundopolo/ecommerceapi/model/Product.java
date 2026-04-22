@@ -1,4 +1,4 @@
-package com.ws101.abundo.polo.ecommerceapi.model;
+package com.ws101.abundopolo.ecommerceapi.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
