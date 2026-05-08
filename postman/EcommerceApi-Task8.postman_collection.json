@@ -1,0 +1,345 @@
+{
+  "info": {
+    "_postman_id": "8a6a2c1b-6d2d-4d6e-9e2d-task8",
+    "name": "Ecommerce API - Task 8 Comprehensive Testing",
+    "description": "Session, CSRF, order protection, and validation checks for Part 4 Task 8.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('baseUrl')) {",
+          "  pm.collectionVariables.set('baseUrl', 'http://localhost:8080');",
+          "}",
+          "if (!pm.collectionVariables.get('password')) {",
+          "  pm.collectionVariables.set('password', 'Task8Pass123');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "username",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": "Task8Pass123"
+    },
+    {
+      "key": "csrfToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. GET /login - Get CSRF Token",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "login"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login page loads', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200, 302]);",
+              "});",
+              "",
+              "const csrfToken = pm.cookies.get('XSRF-TOKEN');",
+              "pm.test('XSRF-TOKEN cookie is set', function () {",
+              "  pm.expect(csrfToken).to.exist;",
+              "});",
+              "if (csrfToken) {",
+              "  pm.collectionVariables.set('csrfToken', decodeURIComponent(csrfToken));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. POST /api/v1/auth/register - Create User",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('username', 'task8user' + Date.now());"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('User is created', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "pm.test('Response has registered username', function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.username).to.eql(pm.collectionVariables.get('username'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\",\n  \"role\": \"USER\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/auth/register",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "auth",
+            "register"
+          ]
+        }
+      }
+    },
+    {
+      "name": "3. POST /login - Login With CSRF Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            {
+              "key": "username",
+              "value": "{{username}}",
+              "type": "text"
+            },
+            {
+              "key": "password",
+              "value": "{{password}}",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "login"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Login succeeds', function () {",
+              "  pm.expect(pm.response.code).to.be.oneOf([200, 302]);",
+              "});",
+              "pm.test('JSESSIONID cookie is set', function () {",
+              "  pm.expect(pm.cookies.get('JSESSIONID')).to.exist;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. POST /api/v1/orders - Succeeds With Session Cookie",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerName\": \"Task 8 Tester\",\n  \"totalAmount\": 250.00\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "orders"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Authenticated order succeeds', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "pm.test('Order response contains order number', function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.orderNumber).to.match(/^ORD-/);",
+              "  pm.expect(body.status).to.eql('PROCESSING');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Validation Check - Invalid Order Data",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerName\": \"\",\n  \"totalAmount\": -1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "orders"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Invalid form data returns 400 when authenticated', function () {",
+              "  pm.response.to.have.status(400);",
+              "});",
+              "pm.test('Specific validation errors are returned', function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.errors).to.include(\"Field 'customerName' Customer name is required\");",
+              "  pm.expect(body.errors).to.include(\"Field 'totalAmount' Total amount must be positive\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Delete JSESSIONID, Then POST /api/v1/orders - Fails With 401",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const jar = pm.cookies.jar();",
+              "jar.unset(pm.collectionVariables.get('baseUrl'), 'JSESSIONID', function (error) {",
+              "  if (error) { console.log(error); }",
+              "});"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Unauthenticated order is rejected', function () {",
+              "  pm.response.to.have.status(401);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-XSRF-TOKEN",
+            "value": "{{csrfToken}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerName\": \"Task 8 Tester\",\n  \"totalAmount\": 250.00\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/orders",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "orders"
+          ]
+        }
+      }
+    }
+  ]
+}
