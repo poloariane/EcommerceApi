@@ -26,6 +26,7 @@ public class AuthService {
     @Transactional
     public UserResponse register(RegisterRequest request) {
         String username = request.username().trim();
+        Role requestedRole = parseRole(request.role());
 
         if (userRepository.existsByUsername(username)) {
             throw new IllegalArgumentException("Username is already taken");
@@ -34,9 +35,23 @@ public class AuthService {
         User user = new User();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(request.password()));
-        user.setRoles(new HashSet<>(Set.of(Role.USER)));
+        user.setRoles(new HashSet<>(Set.of(requestedRole)));
 
         User savedUser = userRepository.save(user);
         return new UserResponse(savedUser.getId(), savedUser.getUsername(), savedUser.getRoles());
+    }
+
+    private Role parseRole(String role) {
+        String normalizedRole = role.trim().toUpperCase();
+
+        if ("SHOPPER".equals(normalizedRole)) {
+            return Role.USER;
+        }
+
+        try {
+            return Role.valueOf(normalizedRole);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Role must be one of: USER, SHOPPER, SELLER, ADMIN");
+        }
     }
 }
