@@ -1,7 +1,11 @@
 package com.ws101.abundopolo.ecommerceapi.controller;
 
+import com.ws101.abundopolo.ecommerceapi.dto.CreateProductDto;
+import com.ws101.abundopolo.ecommerceapi.dto.PatchProductDto;
+import com.ws101.abundopolo.ecommerceapi.dto.UpdateProductDto;
 import com.ws101.abundopolo.ecommerceapi.model.Product;
 import com.ws101.abundopolo.ecommerceapi.service.ProductService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -48,21 +52,10 @@ public class ProductController {
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Product> createProduct(
-            @RequestBody Product product,
+            @Valid @RequestBody CreateProductDto request,
             @RequestParam(required = false) Long categoryId) {
-        
-        if (product.getName() == null || product.getName().trim().isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (product.getPrice() <= 0) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (product.getStockQuantity() < 0) {
-            return ResponseEntity.badRequest().build();
-        }
-        
         try {
-            Product created = productService.createProduct(product, categoryId);
+            Product created = productService.createProduct(request.toProduct(), categoryId);
             return ResponseEntity.status(HttpStatus.CREATED).body(created);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().build();
@@ -73,18 +66,10 @@ public class ProductController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Product> updateProduct(
             @PathVariable Long id,
-            @RequestBody Product product,
+            @Valid @RequestBody UpdateProductDto request,
             @RequestParam(required = false) Long categoryId) {
-        
-        if (product.getName() == null || product.getName().trim().isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (product.getPrice() <= 0) {
-            return ResponseEntity.badRequest().build();
-        }
-        
         try {
-            Product updated = productService.updateProduct(id, product, categoryId);
+            Product updated = productService.updateProduct(id, request.toProduct(), categoryId);
             return ResponseEntity.ok(updated);
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
@@ -95,10 +80,10 @@ public class ProductController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Product> patchProduct(
             @PathVariable Long id,
-            @RequestBody Product product) {
+            @Valid @RequestBody PatchProductDto request) {
         
         try {
-            Product updated = productService.patchProduct(id, product);
+            Product updated = productService.patchProduct(id, request.toProduct());
             return ResponseEntity.ok(updated);
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
