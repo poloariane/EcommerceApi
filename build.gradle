@@ -21,6 +21,7 @@ repositories {
 dependencies {
     // ===== SPRING WEB (corrected) =====
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
     
     // ===== LOMBOK =====
     compileOnly 'org.projectlombok:lombok'
