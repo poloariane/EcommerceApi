@@ -6,13 +6,16 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
-@RestControllerAdvice
+@ControllerAdvice
+@ResponseBody
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -28,19 +31,22 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> fieldErrors = new HashMap<>();
-
-        for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
-            fieldErrors.put(fieldError.getField(), fieldError.getDefaultMessage());
-        }
+        List<String> errors = ex.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(this::formatFieldError)
+                .collect(Collectors.toList());
 
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(Map.of(
                         "timestamp", LocalDateTime.now(),
-                        "error", "Validation Failed",
-                        "messages", fieldErrors
+                        "errors", errors
                 ));
+    }
+
+    private String formatFieldError(FieldError fieldError) {
+        return "Field '" + fieldError.getField() + "' " + fieldError.getDefaultMessage();
     }
 
     @ExceptionHandler(AccessDeniedException.class)
