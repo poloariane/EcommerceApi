@@ -53,6 +53,7 @@ public class GlobalExceptionHandler {
                 "field", fieldError.getField(),
                 "message", fieldError.getDefaultMessage(),
                 "rejectedValue", fieldError.getRejectedValue()
+                
         );
     }
 
