@@ -31,7 +31,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        List<String> errors = ex.getBindingResult()
+        List<Map<String, Object>> errors = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
                 .map(this::formatFieldError)
@@ -41,12 +41,19 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                 .body(Map.of(
                         "timestamp", LocalDateTime.now(),
+                        "status", HttpStatus.BAD_REQUEST.value(),
+                        "error", "Bad Request",
+                        "message", "Validation failed",
                         "errors", errors
                 ));
     }
 
-    private String formatFieldError(FieldError fieldError) {
-        return "Field '" + fieldError.getField() + "' " + fieldError.getDefaultMessage();
+    private Map<String, Object> formatFieldError(FieldError fieldError) {
+        return Map.of(
+                "field", fieldError.getField(),
+                "message", fieldError.getDefaultMessage(),
+                "rejectedValue", fieldError.getRejectedValue()
+        );
     }
 
     @ExceptionHandler(AccessDeniedException.class)

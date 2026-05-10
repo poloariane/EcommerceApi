@@ -1,310 +1,317 @@
-# E-commerce API - Product Catalog
+# Laboratory 9: Securing the API with Sessions & Input Validation
 
 ## Overview
-RESTful API for managing products using Spring Boot with **MySQL database persistence** (JPA/Hibernate). This is Laboratory 8 - Database Integration and Consuming RESTful Web Services with Fetch API.
+A Spring Boot ecommerce API with session-based authentication, role-based authorization, and Bean Validation.
 
-## Technology Stack
-- Spring Boot 4.0.5
-- Java 25
-- Spring Data JPA / Hibernate
-- MySQL / MariaDB
-- Lombok
-- Gradle
+## Features
+- User registration and login with HTTP session authentication
+- Role-based access control: `ROLE_USER` and `ROLE_ADMIN`
+- Product CRUD operations with admin-only protection
+- Input validation using Jakarta Bean Validation
+- Global exception handling for validation and access errors
+- BCrypt password hashing
+- MySQL persistence via Spring Data JPA
+- Simple frontend pages for login, signup, and landing
 
----
+## Security Architecture
 
-## Screenshots
+### Session-Based Authentication
+This application uses stateful session authentication with cookies, not JWT.
 
-### Home Page (Landing Page)
-![Home Page](screenshots/home-page.png)
+**Flow:**
+1. User registers using `POST /api/v1/auth/register`
+2. User logs in using `POST /login`
+3. Spring Security creates an HTTP session and sets the `JSESSIONID` cookie
+4. The browser automatically sends the cookie on future requests
+5. Protected endpoints validate the session on the server
+6. User logs out via `POST /logout`
 
-### Products Page
-![Products Page](screenshots/products-page.png)
+### Key Security Components
+- `SecurityConfig`: configures authorization, form login, CSRF, and session management
+- `CustomUserDetailsService`: loads users from database for authentication
+- `PasswordEncoder` bean: uses `BCryptPasswordEncoder`
+- `User` entity: implements `UserDetails`
+- `@PreAuthorize`: secures controller methods by role
+- `CookieCsrfTokenRepository`: provides CSRF tokens for form submissions
 
-### Add to Cart Feature
-![Add to Cart](screenshots/add-to-cart.png)
+### Authentication vs Authorization
+- Authentication verifies user identity
+- Authorization checks what an authenticated user is allowed to do
 
-### Cart Page
-![Cart Page](screenshots/cart-page.png)
+Example:
+- login verifies the credentials
+- admin-only product creation checks for `ROLE_ADMIN`
 
-### Remove Item from Cart
-![Remove Item](screenshots/remove-item.png)
+## Validation Rules
 
-### Checkout Page
-![Checkout Page](screenshots/checkout-page.png)
+### RegisterRequest DTO
+| Field | Constraints | Message |
+|-------|-------------|---------|
+| `username` | `@NotBlank`, `@Size(min=8, max=20)` | Username is required and must be 8-20 characters |
+| `password` | `@NotBlank`, `@Size(min=8, max=100)` | Password is required and must be at least 8 characters |
+| `role` | `@NotBlank`, `@Pattern(...)` | Role must be USER, SHOPPER, SELLER, or ADMIN |
 
-### Order Purchased
-![Order Purchased](screenshots/order-purchased.png)
+### Product DTOs
+Product request validation is enabled on create/update flows using DTOs with:
+- `@NotBlank`
+- `@Size(...)`
+- `@NotNull`
+- `@Positive`
+- `@Min(0)`
 
-### Browser Console - Successful Fetch
-![Browser Console](screenshots/console-success.png)
+### Global Exception Handling
+Validation failures are handled by `GlobalExceptionHandler` and return structured responses.
 
----
+**Validation response example:**
+```json
+{
+  "timestamp": "2026-05-10T12:00:00",
+  "errors": [
+    "Field 'name' must not be blank",
+    "Field 'price' must be positive"
+  ]
+}
+```
+
+## API Reference
+
+### Public Endpoints
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/v1/products` | List all products |
+| `GET` | `/api/v1/products/{id}` | Get product details |
+| `GET` | `/api/v1/products/filter?filterType={type}&filterValue={value}` | Filter products by type/value |
+| `POST` | `/api/v1/auth/register` | Register a new user |
+| `GET` | `/login.html` | Login page |
+| `GET` | `/signup.html` | Signup page |
+
+### Authentication Endpoints
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/login` | Authenticate user with form data and set `JSESSIONID` cookie |
+| `POST` | `/logout` | Invalidate session and log out |
+
+### Protected Endpoints
+| Method | Path | Required Role | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/orders` | authenticated | Create an order |
+| `POST` | `/api/v1/products` | `ADMIN` | Create a product |
+| `PUT` | `/api/v1/products/{id}` | `ADMIN` | Update a product |
+| `PATCH` | `/api/v1/products/{id}` | `ADMIN` | Patch product fields |
+| `DELETE` | `/api/v1/products/{id}` | `ADMIN` | Delete a product |
+
+### Notes
+- `/api/v1/auth/register` is publicly accessible
+- `/login` is the Spring Security form login processing URL
+- CSRF protection is enabled for form submissions
+- Successful login redirects to `/landing.html`
+
+## Frontend Pages
+Accessible pages include:
+- `http://localhost:8080/signup.html`
+- `http://localhost:8080/login.html`
+- `http://localhost:8080/landing.html`
+
+The login form submits to `/login` and includes a hidden CSRF token field.
+
+## Error Responses
+
+### Validation Error
+```json
+{
+  "timestamp": "2026-05-10T12:00:00",
+  "errors": [
+    "Field 'username' Username is required",
+    "Field 'password' Password is required"
+  ]
+}
+```
+
+### Access Denied
+```json
+{
+  "timestamp": "2026-05-10T12:00:00",
+  "error": "Forbidden",
+  "message": "You do not have permission to access this resource"
+}
+```
+
+### Illegal Argument
+```json
+{
+  "timestamp": "2026-05-10T12:00:00",
+  "error": "Bad Request",
+  "message": "Username is already taken"
+}
+```
 
 ## Database Schema
 
-### Tables and Relationships
+### `users`
+```sql
+CREATE TABLE users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  role VARCHAR(50) NOT NULL,
+  enabled BOOLEAN DEFAULT TRUE,
+  account_non_expired BOOLEAN DEFAULT TRUE,
+  account_non_locked BOOLEAN DEFAULT TRUE,
+  credentials_non_expired BOOLEAN DEFAULT TRUE
+);
+```
 
-| Table | Columns | Primary Key | Foreign Key |
-|-------|---------|-------------|-------------|
-| **categories** | id, name, description | id | - |
-| **products** | id, name, description, price, stock_quantity, category, image_url | id | category → categories.name |
-| **orders** | id, customer_name, order_number, order_date, total_amount, status | id | - |
-| **order_items** | id, quantity, unit_price, order_id, product_id | id | order_id → orders.id, product_id → products.id |
+### `products`
+```sql
+CREATE TABLE products (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(100) NOT NULL,
+  description VARCHAR(500),
+  price DOUBLE NOT NULL,
+  category VARCHAR(100) NOT NULL,
+  stock_quantity INT NOT NULL,
+  image_url VARCHAR(255)
+);
+```
 
-### Entity Relationship Diagram
-┌─────────────────┐         ┌─────────────────┐
-│    Category     │         │     Product     │
-├─────────────────┤         ├─────────────────┤
-│ id (PK)         │◄────────│ id (PK)         │
-│ name            │   1:N    │ name            │
-│ description     │         │ description     │
-└─────────────────┘         │ price           │
-                            │ stock_quantity  │
-                            │ category (FK)   │
-                            │ image_url       │
-                            └─────────────────┘
-                                  ▲
-                                  │
-                                  │ N:1
-                                  │
-┌─────────────────┐         ┌─────────────────┐
-│     Order       │         │   OrderItem     │
-├─────────────────┤         ├─────────────────┤
-│ id (PK)         │────────►│ id (PK)         │
-│ customer_name   │   1:N    │ quantity        │
-│ order_number    │         │ unit_price      │
-│ order_date      │         │ order_id (FK)   │
-│ total_amount    │         │ product_id (FK) │
-│ status          │         └─────────────────┘
-└─────────────────┘
+## Getting Started
 
-text
+### Prerequisites
+- Java 25+
+- MySQL 5.5+ running on `localhost:3306`
+- Gradle 8.0+
 
-### Database Screenshot (phpMyAdmin)
-![Database Products Table](screenshots/database-products.png)
+### Setup
+1. Clone the repository:
+```bash
+git clone https://github.com/carpiocebuano/EcommerceApi.git
+cd EcommerceApi
+```
+2. Create the database:
+```sql
+CREATE DATABASE ecommerce_db;
+```
+3. Configure `src/main/resources/application.properties`:
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/ecommerce_db
+spring.datasource.username=root
+spring.datasource.password=YOUR_PASSWORD
+```
 
----
+### Run the application
+```powershell
+./gradlew.bat bootRun
+```
 
-## API Endpoints (Database-Backed)
+Open `http://localhost:8080` in your browser.
 
-All endpoints are prefixed with `/api/v1`
+## Postman Test Flow
 
-| Method | Endpoint | Description | Request Body | Response Status |
-|--------|----------|-------------|--------------|-----------------|
-| GET | `/products` | Get all products from database | - | 200 OK |
-| GET | `/products/{id}` | Get product by ID | - | 200 OK / 404 Not Found |
-| GET | `/products/filter?filterType={type}&filterValue={value}` | Filter by category/price/name | - | 200 OK / 400 Bad Request |
-| POST | `/products?categoryId={id}` | Create new product | Product JSON | 201 Created / 400 Bad Request |
-| PUT | `/products/{id}?categoryId={id}` | Full update | Product JSON | 200 OK / 404 Not Found |
-| PATCH | `/products/{id}` | Partial update | Partial JSON | 200 OK / 404 Not Found |
-| DELETE | `/products/{id}` | Delete product | - | 204 No Content / 404 Not Found |
-
-### Sample API Request (POST)
-
+1. Register user:
 ```http
-POST http://localhost:8080/api/v1/products?categoryId=1
+POST http://localhost:8080/api/v1/auth/register
 Content-Type: application/json
 
 {
-    "name": "Wireless Mouse",
-    "description": "Ergonomic wireless mouse",
-    "price": 29.99,
-    "stockQuantity": 50,
-    "imageUrl": "../images/products/mouse.jpg"
+  "username": "testuser",
+  "password": "Password123",
+  "role": "USER"
 }
-Sample API Response (GET /products)
-json
-[
-    {
-        "id": 1,
-        "name": "Laptop",
-        "description": "High-performance laptop",
-        "price": 1200.0,
-        "category": "Electronics",
-        "stockQuantity": 10,
-        "imageUrl": "../images/products/electronics/laptop.jpg"
-    },
-    {
-        "id": 2,
-        "name": "Smartphone",
-        "description": "5G Android phone",
-        "price": 699.99,
-        "category": "Electronics",
-        "stockQuantity": 25,
-        "imageUrl": "../images/products/electronics/phone.jpg"
-    }
-]
-Browser Console - Successful Fetch Response
-![Browser Console](screenshots/console-success.png)
+```
 
-Status Codes
-Code	Meaning	When Used
-200	OK	Successful GET, PUT, PATCH requests
-201	Created	Successful POST (product creation)
-204	No Content	Successful DELETE
-400	Bad Request	Invalid input data (missing name, negative price, etc.)
-404	Not Found	Product ID does not exist in database
-500	Internal Server Error	Server or database connection error
-Setup Instructions
-Prerequisites
-Java 25+
+2. Login using form data:
+```http
+POST http://localhost:8080/login
+Content-Type: application/x-www-form-urlencoded
 
-MySQL (XAMPP recommended)
+username=testuser&password=Password123
+```
 
-Gradle
+3. Create order with session cookie:
+```http
+POST http://localhost:8080/api/v1/orders
+Cookie: JSESSIONID=<cookie>
+Content-Type: application/json
 
-Installation Steps
-Clone the repository
-
-bash
-git clone https://github.com/poloariane/EcommerceApi.git
-cd EcommerceApi
-Start MySQL (using XAMPP Control Panel)
-
-Open XAMPP Control Panel
-
-Click "Start" for MySQL
-
-Create database in phpMyAdmin
-
-Open browser: http://localhost/phpmyadmin
-
-Click "New" on the left sidebar
-
-Database name: ecommerce_db
-
-Click "Create"
-
-Configure application.properties (located in src/main/resources/)
-
-properties
-spring.application.name=EcommerceApi
-
-# Database Configuration
-spring.datasource.url=jdbc:mysql://localhost:3306/ecommerce_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
-spring.datasource.username=root
-spring.datasource.password=
-
-# JPA / Hibernate Configuration
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
-spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
-Run the application
-
-bash
-./gradlew bootRun
-Test the API - Open browser and navigate to:
-
-text
-http://localhost:8080/api/v1/products
-Frontend Integration
-The frontend uses Fetch API to consume this backend. Here's the main fetch function with error handling:
-
-javascript
-/**
- * Fetches all products from the Spring Boot backend API
- * Uses async/await pattern with proper error handling
- * 
- * @returns {Promise<Array>} List of products from the database
- */
-async function fetchProducts() {
-    try {
-        console.log('🔄 Fetching products from API:', `${API_BASE_URL}/products`);
-        
-        const response = await fetch(`${API_BASE_URL}/products`);
-        
-        // Check if response is OK (status 200-299)
-        if (!response.ok) {
-            // Throw custom error based on status code
-            if (response.status === 404) {
-                throw new Error('❌ API endpoint not found (404). Backend not running?');
-            } else if (response.status === 500) {
-                throw new Error('❌ Server error (500). Check backend logs.');
-            } else {
-                throw new Error(`❌ HTTP error! Status: ${response.status}`);
-            }
-        }
-        
-        const data = await response.json();
-        console.log('✅ Products fetched successfully:', data.length, 'products found');
-        return data;
-        
-    } catch (error) {
-        console.error('❌ Error fetching products:', error.message);
-        return [];
-    }
+{
+  "productId": 1,
+  "quantity": 2
 }
-CORS Configuration
-To allow frontend to communicate with backend, add this configuration:
+```
 
-java
-package com.ws101.abundopolo.ecommerceapi.config;
+4. Attempt admin action as user:
+```http
+POST http://localhost:8080/api/v1/products
+Cookie: JSESSIONID=<cookie>
+Content-Type: application/json
 
-import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+{
+  "name": "Test Product",
+  "price": 50.0,
+  "category": "Test",
+  "stockQuantity": 10
+}
+```
+Expected: `403 Forbidden`
 
-@Configuration
-public class WebConfig implements WebMvcConfigurer {
-    
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-                .allowedOrigins("http://localhost:5500", "http://127.0.0.1:5500")
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
-                .allowedHeaders("Authorization", "Content-Type")
-                .allowCredentials(true);
-    }
+5. Create invalid product:
+```http
+POST http://localhost:8080/api/v1/products
+Cookie: JSESSIONID=<admin-cookie>
+Content-Type: application/json
+
+{
+  "name": "x",
+  "price": -10,
+  "category": "",
+  "stockQuantity": -5
 }
-Test Results
-Flow Test Results
-Test	Expected Result	Actual Result	Status
-Products load from database	Products visible on page	8 products displayed	✅ PASS
-Add to Cart	Item added to cart, toast notification appears	Smartphone added notification shown	✅ PASS
-Cart displays items	Items show with correct quantity	Laptop (1), Smartphone (2)	✅ PASS
-Remove from Cart	Item removed, cart becomes empty	Cart empty message shown	✅ PASS
-Checkout form	Form validates required fields	Fields validated successfully	✅ PASS
-Place Order	Order saved, redirect to account	Order #38810 created	✅ PASS
-Responsive Check Results
-Device	Width	Layout	Status
-Desktop	>1024px	3-4 columns	✅ PASS
-Tablet	768-1024px	2 columns	✅ PASS
-Mobile	<768px	1 column	✅ PASS
-JPA Entity Documentation
-Product.java
-java
-/**
- * Product Entity - Represents products in the e-commerce system.
- * Mapped to the "products" table in the database.
- * 
- * @author Abundo Polo
- * @version 2.0
- */
-@Entity
-@Table(name = "products")
-public class Product {
-    // fields and methods
-}
-Category.java
-java
-/**
- * Category Entity - Represents product categories.
- * One-to-Many relationship with Product entity.
- * 
- * @author Abundo Polo
- * @version 1.0
- */
-@Entity
-@Table(name = "categories")
-public class Category {
-    // fields and methods
-}
-Authors
+```
+Expected: `400 Bad Request`
+
+6. Logout:
+```http
+POST http://localhost:8080/logout
+```
+
+## Project Structure
+
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/config/SecurityConfig.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/controller/AuthController.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/controller/ProductController.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/controller/OrderController.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/dto/RegisterRequest.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/dto/CreateProductDto.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/dto/UpdateProductDto.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/dto/CreateOrderDto.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/exception/GlobalExceptionHandler.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/model/User.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/model/Product.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/model/Role.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/repository/UserRepository.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/service/AuthService.java`
+- `src/main/java/com/ws101/abundopolo/ecommerceapi/service/CustomUserDetailsService.java`
+- `src/main/resources/application.properties`
+- `src/main/resources/static/login.html`
+- `src/main/resources/static/signup.html`
+- `src/main/resources/static/landing.html`
+- `build.gradle`
+- `README.md`
+
+## Technologies Used
+
+- Spring Boot
+- Spring Security
+- Spring Data JPA
+- MySQL
+- Lombok
+- Jakarta Bean Validation
+- Gradle
+- Java
+
+## Authors
 Abundo, Clarissa Mae T.
-
 Polo, Ariane C.
 
-GitHub Repository
-https://github.com/poloariane/EcommerceApi
+## License
+This project is part of the Web Systems 101 course.

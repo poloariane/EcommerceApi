@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>MyShop-Pay · Secure Checkout</title>
-    <link rel="stylesheet" href="../css/style.css">
-    <link rel="stylesheet" href="../css/checkout.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/checkout.css">
 </head>
-<body>
+<body data-auth-check-url="/api/user/me">
     <header>
         <a id="lg"><h2>MyShop-Pay</h2></a>
         <nav>
-            <a href="../index.html">Home</a>
+            <a href="landing.html">Home</a>
             <a href="products.html">Shop</a>
             <a href="cart.html">Cart</a>
             <a href="account.html">My Account</a>
@@ -26,7 +26,7 @@
             </div>
         </div>
 
-        <div class="checkout-grid">
+        <div class="checkout-grid" data-protected-content>
             <div class="shipping-card">
                 <h2>Shipping Information</h2>
                 <div class="form-group">
@@ -98,6 +98,6 @@
             <p>Your cart is currently empty. <a href="products.html">Continue Shopping</a></p>
         </div>
     </div>
-    <script src="../Js/script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>

@@ -35,10 +35,10 @@ public class AuthService {
         User user = new User();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(request.password()));
-        user.setRoles(new HashSet<>(Set.of(requestedRole)));
+        user.setRole(requestedRole);
 
         User savedUser = userRepository.save(user);
-        return new UserResponse(savedUser.getId(), savedUser.getUsername(), savedUser.getRoles());
+        return new UserResponse(savedUser.getId(), savedUser.getUsername(), savedUser.getRole());
     }
 
     private Role parseRole(String role) {
