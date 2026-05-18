@@ -1,5 +1,7 @@
 package com.ws101.abundopolo.ecommerceapi.controller;
 
+import com.ws101.abundopolo.ecommerceapi.dto.AuthResponse;
+import com.ws101.abundopolo.ecommerceapi.dto.LoginRequest;
 import com.ws101.abundopolo.ecommerceapi.dto.RegisterRequest;
 import com.ws101.abundopolo.ecommerceapi.dto.UserResponse;
 import com.ws101.abundopolo.ecommerceapi.service.AuthService;
@@ -25,4 +27,11 @@ public class AuthController {
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(authService.register(request));
     }
+
+    @PostMapping("/login")
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+        AuthResponse response = authService.login(request);
+        return ResponseEntity.ok(response);
+    }
 }
+

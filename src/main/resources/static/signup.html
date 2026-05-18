@@ -27,12 +27,12 @@
 
           <div class="form-group">
             <label for="email">Email Address</label>
-            <input type="email" id="email" class="input" placeholder="hello@example.com" />
+            <input type="email" id="email" name="username" class="input" placeholder="hello@example.com" />
           </div>
 
           <div class="form-group">
             <label for="password">Password</label>
-            <input type="password" id="password" class="input" placeholder="••••••" />
+            <input type="password" id="password" name="password" class="input" placeholder="••••••" />
             <small class="password-hint">Must be at least 8 characters</small>
           </div>
 
@@ -85,13 +85,6 @@
         errorMessage.style.margin = '0 0 1rem';
         signupForm.insertBefore(errorMessage, signupForm.firstChild);
 
-        function getCookie(name) {
-          const value = `; ${document.cookie}`;
-          const parts = value.split(`; ${name}=`);
-          if (parts.length === 2) return parts.pop().split(';').shift();
-          return '';
-        }
-
         function showError(message) {
           errorMessage.textContent = message;
         }
@@ -123,19 +116,13 @@
             return;
           }
 
-          const csrfToken = getCookie('XSRF-TOKEN');
-          if (!csrfToken) {
-            showError('Security token missing. Reload the page and try again.');
-            return;
-          }
-
           try {
             const response = await fetch('/api/v1/auth/register', {
               method: 'POST',
               credentials: 'same-origin',
               headers: {
                 'Content-Type': 'application/json',
-                'X-XSRF-TOKEN': csrfToken
+                'Accept': 'application/json'
               },
               body: JSON.stringify({
                 username: email,
@@ -149,8 +136,16 @@
               return;
             }
 
-            const body = await response.json().catch(() => ({}));
-            showError(body.message || 'Unable to create account. Please try again.');
+            const body = await response.json().catch(function() { return {}; });
+            var errorMessageValue = body && body.message;
+            if (!errorMessageValue && body && Array.isArray(body.errors)) {
+              errorMessageValue = body.errors.map(function(err) { return err.message; }).join(' ');
+            }
+            if (!errorMessageValue) {
+              errorMessageValue = 'Unable to create account. (' + response.status + ')';
+            }
+            console.error('Registration failed:', response.status, body);
+            showError(errorMessageValue);
           } catch (error) {
             showError('Unable to register. Check your network connection and try again.');
           }

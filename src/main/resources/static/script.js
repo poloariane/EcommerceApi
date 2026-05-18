@@ -1,8 +1,27 @@
 // ============================================================================
-// TASK 7: AUTHENTICATED FETCH WRAPPER & PROTECTED ROUTES
+// TASK 7: AUTHENTICATED FETCH WRAPPER & PROTECTED ROUTES (JWT AUTH SUPPORT)
 // ============================================================================
 const LOGIN_PAGE_URL = 'login.html';
 const CURRENT_PAGE = window.location.pathname.split('/').pop() || 'landing.html';
+const API_BASE_URL = 'http://localhost:8080';
+// JWT Token management
+const JWT_TOKEN_KEY = 'jwt_token';
+
+function getJwtToken() {
+    return localStorage.getItem(JWT_TOKEN_KEY);
+}
+
+function saveJwtToken(token) {
+    localStorage.setItem(JWT_TOKEN_KEY, token);
+}
+
+function clearJwtToken() {
+    localStorage.removeItem(JWT_TOKEN_KEY);
+}
+
+function isJwtTokenValid() {
+    return getJwtToken() !== null && getJwtToken() !== '';
+}
 
 function redirectToLogin() {
     if (CURRENT_PAGE === LOGIN_PAGE_URL) return;
@@ -40,18 +59,76 @@ function showAccessDeniedMessage(message = 'Access Denied') {
     accessDenied.textContent = message;
 }
 
-async function authFetch(url, options = {}) {
-    const response = await fetch(url, {
-        // Session auth depends on the browser sending the HttpOnly JSESSIONID cookie.
-        credentials: 'same-origin',
-        ...options,
-        headers: {
-            ...(options.headers || {})
+/**
+ * Login with JWT authentication
+ * Sends credentials to /api/v1/auth/login and stores the returned JWT token
+ */
+async function loginWithJwt(username, password) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.message || 'Login failed');
         }
+
+        const data = await response.json();
+        
+        if (!data || !data.token) {
+            throw new Error('Missing auth token from server response.');
+        }
+
+        // Save the JWT token
+        saveJwtToken(data.token);
+
+        // Store username for cart key isolation across accounts
+        if (data.username) {
+            localStorage.setItem('username', data.username);
+            window.__cartUsername = data.username;
+            console.log('Username saved for cart isolation:', data.username);
+        }
+
+        // Reload cart for this specific user after login
+        loadCart();
+        renderCart();
+
+        return {
+            success: true,
+            token: data.token,
+            username: data.username,
+            role: data.role
+        };
+    } catch (error) {
+        console.error('Login error:', error);
+        throw error;
+    }
+}
+
+async function authFetch(url, options = {}) {
+    const token = getJwtToken();
+    const headers = {
+        ...(options.headers || {})
+    };
+
+    // Add JWT token to Authorization header if available
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+        ...options,
+        headers: headers
     });
 
     if (response.status === 401) {
-        // 401 means there is no valid session, so the user must sign in.
+        // 401 means there is no valid session/token, so the user must sign in.
+        clearJwtToken();
         redirectToLogin();
         throw new Error('Unauthorized');
     }
@@ -70,7 +147,6 @@ window.authFetch = authFetch;
 async function requireLoggedIn() {
     const protectedContent = document.querySelector('[data-protected-content]');
     const authCheckUrl = document.body?.dataset.authCheckUrl || '/api/user/me';
-
     if (!protectedContent) return true;
 
     protectedContent.style.display = 'none';
@@ -138,20 +214,59 @@ const products = [
 // Each cart item contains: id, name, price, quantity, and image
 let cart = [];
 
-// Save cart to localStorage - this preserves cart data even after page reload
+// Save cart to localStorage (per-user so carts don't leak across accounts)
 // Using localStorage allows the cart to persist across browser sessions
+function getCartStorageKey() {
+    // Logged-in user cart (isolated by username)
+    const token = getJwtToken();
+    if (token) {
+        // Use the username stored after login
+        const cachedUsername = window.__cartUsername || localStorage.getItem('username');
+        if (cachedUsername) {
+            console.log('Using username-based key:', `cart_${cachedUsername}`);
+            return `cart_${cachedUsername}`;
+        }
+        
+        // If username is not loaded yet, fall back to a token-scoped key
+        // This prevents cart leakage before username is set
+        console.log('Using token-based key:', `cart_token_${token.substring(0, 10)}...`);
+        return `cart_token_${token}`;
+    }
+
+    // Anonymous cart (not logged in)
+    console.log('Using anonymous cart key');
+    return 'cart_anonymous';
+}
+
 function saveCart() {
-    localStorage.setItem('cart', JSON.stringify(cart));
+    const storageKey = getCartStorageKey();
+    console.log('Saving cart for key:', storageKey, 'Cart:', cart);
+    localStorage.setItem(storageKey, JSON.stringify(cart));
 }
 
 // Load cart from localStorage - retrieves previously saved cart data
 // Called when the page loads to restore the user's previous cart state
+// Load cart from localStorage - retrieves previously saved cart data
+// Called when the page loads to restore the user's previous cart state
 function loadCart() {
-    const savedCart = localStorage.getItem('cart');
+    const storageKey = getCartStorageKey();
+    const savedCart = localStorage.getItem(storageKey);
+    console.log('Loading cart for key:', storageKey, 'Data:', savedCart);
+    
     if (savedCart) {
-        cart = JSON.parse(savedCart);
+        try {
+            cart = JSON.parse(savedCart);
+            console.log('Cart loaded successfully:', cart);
+        } catch (e) {
+            console.error('Error parsing cart data:', e);
+            cart = [];
+        }
+    } else {
+        console.log('No saved cart found for key:', storageKey);
+        cart = [];
     }
 }
+
 
 // Helper function to find a product by its ID
 // Uses the .find() array method to locate the product in the products array
@@ -449,13 +564,16 @@ function setupFormValidation() {
     }
     
     // Handle signup form submission
-    const signupBtn = document.getElementById('sg-btn');
-    if (signupBtn) {
-        signupBtn.addEventListener('click', (e) => {
-            e.preventDefault(); // Prevents page reload
-            validateSignupForm();
-        });
-    }
+    // NOTE: Signup registration is handled inline in signup.html (it does the real fetch to /api/v1/auth/register).
+    // Keep this script from intercepting the submit, otherwise registration will never reach the backend.
+    // const signupBtn = document.getElementById('sg-btn');
+    // if (signupBtn) {
+    //     signupBtn.addEventListener('click', (e) => {
+    //         e.preventDefault(); // Prevents page reload
+    //         validateSignupForm();
+    //     });
+    // }
+
 }
 
 // Loads and displays cart summary on checkout page
@@ -682,50 +800,23 @@ function validateSignupForm() {
 // TASK 5: USER ACCOUNT & ORDER HISTORY
 // ============================================================================
 // Mock user data with order history - demonstrates object manipulation
-const currentUser = {
-    name: "Ariane",
-    orderHistory: [
-        { 
-            id: "#001", 
-            total: 380, 
-            date: "January 15, 2024", 
-            items: ["Luxury Face Cream - ₱380"], 
-            status: "Delivered",
-            tracking: "TRK123456789"
-        },
-        { 
-            id: "#002", 
-            total: 520, 
-            date: "January 20, 2024", 
-            items: ["Hydrating Serum - ₱450", "Lipstick Set - ₱70"], 
-            status: "Pending",
-            tracking: "TRK987654321"
-        },
-        { 
-            id: "#003", 
-            total: 890, 
-            date: "January 25, 2024", 
-            items: ["Denim Jeans - ₱890"], 
-            status: "Shipped",
-            tracking: "TRK456789123"
-        },
-        { 
-            id: "#004", 
-            total: 450, 
-            date: "February 1, 2024", 
-            items: ["Vitamin C Moisturizer - ₱380", "Green Tea - ₱70"], 
-            status: "Delivered",
-            tracking: "TRK789123456"
-        },
-        { 
-            id: "#005", 
-            total: 1200, 
-            date: "February 5, 2024", 
-            items: ["Running Shoes - ₱1200"], 
-            status: "Processing",
-            tracking: "TRK321654987"
+// Get orders from localStorage (saved during checkout)
+function getOrderHistory() {
+    const orders = localStorage.getItem('orders');
+    if (orders) {
+        try {
+            return JSON.parse(orders);
+        } catch (e) {
+            console.error('Error parsing orders:', e);
+            return [];
         }
-    ]
+    }
+    return [];
+}
+
+const currentUser = {
+    name: localStorage.getItem('username') || "Guest",
+    orderHistory: getOrderHistory()
 };
 
 // Saved items array for wishlist functionality
@@ -737,10 +828,14 @@ let savedItems = [
 
 // Sets up the account page with user data and dashboard
 function setupAccountPage() {
+    // Get the latest orders from localStorage
+    const orders = getOrderHistory();
+    
     // Dynamic greeting - updates welcome message with user's name
     const welcomeHeader = document.getElementById('welcome-message');
     if (welcomeHeader) {
-        welcomeHeader.textContent = `Welcome back, ${currentUser.name}!`;
+        const username = localStorage.getItem('username') || "Guest";
+        welcomeHeader.textContent = `Welcome back, ${username}!`;
     }
     
     // Update dashboard statistics
@@ -749,12 +844,12 @@ function setupAccountPage() {
     const savedItemsElement = document.getElementById('saved-items');
     
     if (totalOrdersElement) {
-        totalOrdersElement.textContent = `${currentUser.orderHistory.length} Orders`;
+        totalOrdersElement.textContent = `${orders.length} Orders`;
     }
     
-    // Calculate pending orders using .filter() - creates new array with matching orders
+    // Calculate pending orders using .filter()
     if (pendingOrdersElement) {
-        const pendingCount = currentUser.orderHistory.filter(order => 
+        const pendingCount = orders.filter(order => 
             order.status === "Pending" || order.status === "Processing"
         ).length;
         pendingOrdersElement.textContent = `${pendingCount} Order${pendingCount !== 1 ? 's' : ''}`;
@@ -780,8 +875,16 @@ function setupOrderHistory() {
     
     orderContainer.innerHTML = '';
     
-    // Loop through each order in the orderHistory array using forEach()
-    currentUser.orderHistory.forEach((order, index) => {
+    // Get latest orders from localStorage
+    const orders = getOrderHistory();
+    
+    if (orders.length === 0) {
+        orderContainer.innerHTML = '<p style="text-align: center; padding: 2rem;">No orders yet. Start shopping!</p>';
+        return;
+    }
+    
+    // Loop through each order in the orders array
+    orders.forEach((order, index) => {
         // Create article container for each order
         const article = document.createElement('article');
         article.classList.add('order-card');
@@ -793,25 +896,21 @@ function setupOrderHistory() {
         const summary = document.createElement('summary');
         summary.textContent = `${order.id} — ₱${order.total}`;
         
-        // Container for order details that will be dynamically populated
+        // Container for order details
         const orderDetailsDiv = document.createElement('div');
         orderDetailsDiv.classList.add('order-details-container');
         
-        // addEventListener on summary - toggles order details dynamically
-        // This demonstrates event handling and dynamic DOM injection
+        // Add click event to toggle details
         summary.addEventListener('click', (e) => {
-            e.preventDefault(); // Prevent default summary behavior
+            e.preventDefault();
             
             const isOpen = details.hasAttribute('open');
             
             if (isOpen) {
-                // Close the details and clear content
                 details.removeAttribute('open');
                 orderDetailsDiv.innerHTML = '';
             } else {
-                // Open details and inject order information
                 details.setAttribute('open', '');
-                // Using innerHTML here is safe because data is controlled (not user input)
                 orderDetailsDiv.innerHTML = `
                     <div class="order-details">
                         <p><strong>📅 Order Date:</strong> ${order.date}</p>
@@ -825,7 +924,7 @@ function setupOrderHistory() {
                                 ${order.status}
                             </span>
                         </p>
-                        <p><strong>🚚 Tracking Number:</strong> ${order.tracking}</p>
+                        <p><strong>🚚 Tracking Number:</strong> ${order.tracking || 'N/A'}</p>
                         ${order.status === 'Delivered' ? 
                             '<p><strong>✅ Delivered on:</strong> ' + order.date + '</p>' : 
                             '<p><strong>⏳ Estimated Delivery:</strong> 3-5 business days</p>'
@@ -835,7 +934,6 @@ function setupOrderHistory() {
             }
         });
         
-        // Assemble the order card
         details.appendChild(summary);
         details.appendChild(orderDetailsDiv);
         article.appendChild(details);
@@ -902,7 +1000,18 @@ function setupLogout() {
         logoutLink.addEventListener('click', (e) => {
             const confirmLogout = confirm('Are you sure you want to logout?');
             if (!confirmLogout) {
-                e.preventDefault(); // Prevent navigation if user cancels
+                e.preventDefault();
+            } else {
+                // Clear JWT token on logout
+                clearJwtToken();
+                // Clear username from localStorage
+                localStorage.removeItem('username');
+                // Reset window.__cartUsername
+                window.__cartUsername = null;
+                // Clear the cart for this session
+                cart = [];
+                // Optional: Save empty cart for this user (won't affect other users)
+                saveCart();
             }
         });
     }
@@ -1206,14 +1315,13 @@ function createProductCard(product, type, discountedPrice = null, discountPercen
 // ============================================================================
 // INITIALIZATION - DOMContentLoaded Event Listener
 // ============================================================================
-// Load cart data from localStorage
-loadCart();
-
 // Wait for DOM to be fully loaded before executing initialization
 // This ensures all HTML elements are available for querySelector
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize all page-specific functionality
+
     renderProducts();           // Task 2: Dynamic product rendering
+    loadCart();                 // Load cart from localStorage before rendering
     renderCart();               // Task 3: Cart rendering
     setupEventDelegation();     // Task 3: Event delegation for Add to Cart
     setupFormValidation();      // Task 4: Form validation with preventDefault

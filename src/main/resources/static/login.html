@@ -43,7 +43,7 @@
                     <p class="subheadline">Enter your credentials to continue</p>
                 </div>
 
-                <form id="login-form" action="/login" method="post" novalidate>
+                <form id="login-form" novalidate>
                     <input type="hidden" id="csrf-token" name="_csrf" value="">
 
                     <div class="form-group">
@@ -132,69 +132,21 @@
                 if (errorContainer) errorContainer.textContent = '';
             }
 
-            function getCsrfTokenFromCookie() {
-                const cookies = document.cookie.split(';').map(cookie => cookie.trim());
-                const csrfCookie = cookies.find(cookie => cookie.startsWith('XSRF-TOKEN='));
-                return csrfCookie ? decodeURIComponent(csrfCookie.split('=')[1]) : '';
-            }
-
-            function setCsrfTokenFromDocument(doc) {
-                // Spring Security commonly exposes CSRF as a hidden _csrf input or meta tags.
-                const tokenField = doc.querySelector('input[name="_csrf"]');
-                const tokenMeta = doc.querySelector('meta[name="_csrf"]');
-                const parameterMeta = doc.querySelector('meta[name="_csrf_parameter"]');
-                const token = tokenField?.value || tokenMeta?.content || '';
-                const parameterName = tokenField?.name || parameterMeta?.content || '_csrf';
-
-                if (csrfInput) {
-                    csrfInput.name = parameterName;
-                    csrfInput.value = token;
-                }
-            }
-
-            async function loadCsrfToken() {
-                setCsrfTokenFromDocument(document);
-
-                if (csrfInput?.value) return;
-
-                const cookieToken = getCsrfTokenFromCookie();
-                if (cookieToken && csrfInput) {
-                    csrfInput.value = cookieToken;
-                    return;
-                }
-
-                try {
-                    const response = await fetch('/login.html', {
-                        method: 'GET',
-                        credentials: 'same-origin',
-                        headers: {
-                            'Accept': 'text/html'
-                        }
-                    });
-
-                    if (!response.ok) return;
-
-                    const html = await response.text();
-                    const doc = new DOMParser().parseFromString(html, 'text/html');
-                    setCsrfTokenFromDocument(doc);
-                } catch (error) {
-                    console.warn('Unable to load CSRF token from /login.html.', error);
-                }
-            }
-
             function validateBeforeSubmit(event) {
+                event.preventDefault();
+                
                 let isValid = true;
-                const email = emailInput?.value.trim() || '';
+                const username = emailInput?.value.trim() || '';
                 const password = passwordInput?.value || '';
 
                 clearFieldError(emailInput, emailErrorDiv);
                 clearFieldError(passwordInput, passwordErrorDiv);
 
-                if (!email) {
+                if (!username) {
                     emailErrorDiv.textContent = 'Please enter your email address.';
                     emailInput.classList.add('error');
                     isValid = false;
-                } else if (!email.includes('@') || !email.includes('.')) {
+                } else if (!username.includes('@') || !username.includes('.')) {
                     emailErrorDiv.textContent = 'Please enter a valid email address.';
                     emailInput.classList.add('error');
                     isValid = false;
@@ -206,22 +158,47 @@
                     isValid = false;
                 }
 
-                if (!csrfInput?.value) {
-                    passwordErrorDiv.textContent = 'Security token is still loading. Please try again in a moment.';
-                    loadCsrfToken();
-                    isValid = false;
-                }
-
                 if (!isValid) {
-                    event.preventDefault();
                     return;
                 }
 
-                if (rememberCheckbox?.checked) {
-                    localStorage.setItem('rememberedUser', email);
-                } else {
-                    localStorage.removeItem('rememberedUser');
+                // Disable submit button during login
+                const loginBtn = document.getElementById('login-btn');
+                if (loginBtn) {
+                    loginBtn.disabled = true;
+                    loginBtn.textContent = 'Signing in...';
                 }
+
+                // Perform JWT login
+                loginWithJwt(username, password)
+                    .then((result) => {
+                        console.log('Login successful:', result);
+                        
+                        // Store remembered user if checkbox is checked
+                        if (rememberCheckbox?.checked) {
+                            localStorage.setItem('rememberedUser', username);
+                        } else {
+                            localStorage.removeItem('rememberedUser');
+                        }
+
+                        // Check for redirect parameter in URL
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const redirectTarget = urlParams.get('redirect') || 'landing.html';
+                        
+                        // Redirect to the target page
+                        window.location.href = redirectTarget;
+                    })
+                    .catch((error) => {
+                        console.error('Login error:', error);
+                        passwordErrorDiv.textContent = error.message || 'Login failed. Please check your credentials.';
+                        passwordInput.classList.add('error');
+                        
+                        // Re-enable submit button on error
+                        if (loginBtn) {
+                            loginBtn.disabled = false;
+                            loginBtn.textContent = 'Sign In';
+                        }
+                    });
             }
 
             toggleBtn?.addEventListener('click', function(event) {
@@ -242,8 +219,6 @@
                 emailInput.value = remembered;
                 if (rememberCheckbox) rememberCheckbox.checked = true;
             }
-
-            loadCsrfToken();
         })();
     </script>
 </body>
